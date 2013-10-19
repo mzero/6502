@@ -19,6 +19,9 @@ type Addr = Word16
 makeAddr :: Word8 -> Word8 -> Addr
 makeAddr lo hi = fromIntegral hi `shiftL` 16 .|. fromIntegral lo
 
+splitAddr :: Addr -> (Word8, Word8)   -- lo, hi
+splitAddr addr = (fromIntegral addr, fromIntegral $ addr `shiftR` 16)
+
 zeroPage :: Word8 -> Addr
 zeroPage v = fromIntegral v
 
@@ -47,6 +50,7 @@ bitN = 7
 setAZN = undefined
 setAZCN = undefined
 setZCN = undefined
+setZVN = undefined
 setXZN = undefined
 setYZN = undefined
 
@@ -55,14 +59,14 @@ setYZN = undefined
     setting A/X/Y and flags
     setting flags on various instructions
 
-    push/pop instructions
-
     decimal arith. mode
-
+    shifts are bogus
     input/output
 
     test suite
 
+    not sure when to set B bit on BRK
+    not sure if page crossing and indexing is correct
 -}
 
 
@@ -94,11 +98,32 @@ nextPC :: St Addr
 nextPC = do
     s <- get
     let pc = regPC s
-    modify $ \s -> s { regPC = pc + 1 }
+    put s { regPC = pc + 1 }
     return pc
 
 fetchPC :: St Word8
 fetchPC = nextPC >>= fetch
+
+push :: Word8 -> St ()
+push v = do
+    s <- get
+    let sp = regS s
+    store (makeAddr 1 sp) v
+    put s { regS = sp - 1 }
+
+pull :: St Word8
+pull = do
+    s <- get
+    let sp = regS s + 1
+    put s { regS = sp }
+    fetch $ makeAddr 1 sp
+
+pushAddr :: Addr -> St ()
+pushAddr addr = let (lo, hi) = splitAddr addr in push hi >> push lo
+
+pullAddr :: St Addr
+pullAddr = makeAddr <$> pull <*> pull
+
 
 indexX addr = gets regX >>= return . (addr +) . fromIntegral
 indexY addr = gets regY >>= return . (addr +) . fromIntegral
@@ -193,7 +218,10 @@ brIns bit t = do
     p <- gets regP
     when (testBit p bit == t) $ jump addr
 
-
+vector addr = fetchIndirectAddr addr >>= jump
+nmiVector = vector 0xFFFA
+resetVector = vector 0xFFFC
+intVector = vector 0xFFFE
 
 
 insORA = aluIns setAZN (.|.)
@@ -219,7 +247,7 @@ insROLacc = bitAccIns (flip rotateL 1)
 insLSRacc = bitAccIns (flip shiftR 1)
 insRORacc = bitAccIns (flip rotateR 1)
 
-insBIT mode = undefined
+insBIT      = aluIns setZVN (.&.)
 insJMP mode = mode >>= jump
 insSTY      = storeIns $ gets regY
 insLDY      = loadIns $ \v -> modify $ \s -> s { regY = v }
@@ -243,15 +271,15 @@ insCLV = stIns clearBit bitV
 insCLD = stIns clearBit bitD
 insSED = stIns setBit   bitD
 
-insBRK = undefined
-insJSR = undefined
-insRTI = undefined
-insRTS = undefined
+insBRK = gets regPC >>= pushAddr . (+ 1) >> insPHP >> insSEI >> intVector
+insJSR = addrAbs >>= \addr -> gets regPC >>= pushAddr . (subtract 1) >> jump addr
+insRTI = insPLP >> pullAddr >>= jump
+insRTS = pullAddr >>= jump . (+ 1)
 
-insPHP = undefined
-insPLP = undefined
-insPHA = undefined
-insPLA = undefined
+insPHP = gets regP >>= push
+insPLP = pull >>= \v -> modify $ \s -> s { regP = v }
+insPHA = gets regA >>= push
+insPLA = pull >>= setAZN
 
 insNOP = return ()
 
