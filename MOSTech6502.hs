@@ -38,29 +38,31 @@ data S = S { regA, regX, regY, regP, regS :: !Word8
            }
 type St = State S
 
+[bitN, bitV, _, bitB, bitD, bitI, bitZ, bitC] = [7,6..0]
 
-bitC = 0
-bitZ = 1
-bitI = 2
-bitD = 3
-bitB = 4
-bitV = 6
-bitN = 7
+assignBit bit bool byte = (if bool then setBit else clearBit) byte bit
 
-setAZN = undefined
-setAZCN = undefined
-setZCN = undefined
-setZVN = undefined
-setXZN = undefined
-setYZN = undefined
+assignZ v = assignBit bitZ (v == 0)
+assignZN v = assignBit bitZ (v == 0) . assignBit bitN (testBit v 7)
+assign67 v = assignBit bitV (testBit v 6) . assignBit bitN (testBit v 7)
+
+setAZN v = modify $ \s -> s { regA = v, regP = assignZN v $ regP s }
+setXZN v = modify $ \s -> s { regX = v, regP = assignZN v $ regP s }
+setYZN v = modify $ \s -> s { regY = v, regP = assignZN v $ regP s }
+
+setZVNbit (a,v) = modify $ \s -> s { regP = assignZ (a .&. v) $ assign67 v $ regP s }
+
+setACZN = undefined
+setCZN = undefined
 
 {- TODO
 
-    setting A/X/Y and flags
-    setting flags on various instructions
+    setting flags on compare instructions
+    setting flags on ADC/SBC instructions
 
     decimal arith. mode
     shifts are bogus
+
     input/output
 
     test suite
@@ -197,17 +199,18 @@ loadIns loader mode = mode >>= fetch >>= loader
 storeIns :: St Word8 -> St Addr -> St ()
 storeIns fetcher mode = mode >>= \addr -> fetcher >>= store addr
 
-aluIns :: (Word8 -> St ()) -> (Word8 -> Word8 -> Word8) -> St Addr -> St ()
+aluIns :: (v -> St ()) -> (Word8 -> Word8 -> v) -> St Addr -> St ()
 aluIns set op mode = do
     v <- mode >>= fetch
     a <- gets regA
     set $ op a v
 
-bitIns :: (Word8 -> Word8) -> St Addr -> St ()
-bitIns op mode = mode >>= \addr -> fetch addr >>= store addr . op
+modIns :: (Word8 -> Word8) -> St Addr -> St ()
+modIns op mode = mode >>= \addr -> fetch addr >>= store addr . op
+    -- TODO: Need to set ZN flags
 
-bitAccIns :: (Word8 -> Word8) -> St ()
-bitAccIns op = modify $ \s -> s { regA = op (regA s) }
+modAccIns :: (Word8 -> Word8) -> St ()
+modAccIns op = modify $ \s -> s { regA = op (regA s) }
 
 stIns op bit = modify $ \s -> s { regP = op (regP s) bit }
 
@@ -227,32 +230,32 @@ intVector = vector 0xFFFE
 insORA = aluIns setAZN (.|.)
 insAND = aluIns setAZN (.&.)
 insEOR = aluIns setAZN xor
-insADC = aluIns setAZCN (+)
+insADC = aluIns setACZN (+)
 insSTA = storeIns $ gets regA
-insLDA = aluIns setAZN (flip const)
-insCMP = aluIns setZCN subtract
-insSBC = aluIns setAZCN subtract
+insLDA = loadIns setAZN
+insCMP = aluIns setCZN subtract
+insSBC = aluIns setACZN subtract
 
-insASL = bitIns (flip shiftL 1)   -- TODO: set flags CZN
-insROL = bitIns (flip rotateL 1)
-insLSR = bitIns (flip shiftR 1)
-insROR = bitIns (flip rotateR 1)
+insASL = modIns (flip shiftL 1)   -- TODO: set flags CZN
+insROL = modIns (flip rotateL 1)
+insLSR = modIns (flip shiftR 1)
+insROR = modIns (flip rotateR 1)
 insSTX = storeIns $ gets regX
-insLDX = loadIns $ \v -> modify $ \s -> s { regX = v }
-insDEC = bitIns (subtract 1)
-insINC = bitIns (+ 1)
+insLDX = loadIns setXZN
+insDEC = modIns (subtract 1)
+insINC = modIns (+ 1)
 
-insASLacc = bitAccIns (flip shiftL 1)   -- TODO: set flags CZN
-insROLacc = bitAccIns (flip rotateL 1)
-insLSRacc = bitAccIns (flip shiftR 1)
-insRORacc = bitAccIns (flip rotateR 1)
+insASLacc = modAccIns (flip shiftL 1)   -- TODO: set flags CZN
+insROLacc = modAccIns (flip rotateL 1)
+insLSRacc = modAccIns (flip shiftR 1)
+insRORacc = modAccIns (flip rotateR 1)
 
-insBIT      = aluIns setZVN (.&.)
+insBIT      = aluIns setZVNbit (,)
 insJMP mode = mode >>= jump
 insSTY      = storeIns $ gets regY
-insLDY      = loadIns $ \v -> modify $ \s -> s { regY = v }
-insCPX mode = mode >>= fetch >>= \v -> gets regX >>= \x -> setZCN (x - v)
-insCPY mode = mode >>= fetch >>= \v -> gets regY >>= \y -> setZCN (y - v)
+insLDY      = loadIns setYZN
+insCPX mode = mode >>= fetch >>= \v -> gets regX >>= \x -> setCZN (x - v)
+insCPY mode = mode >>= fetch >>= \v -> gets regY >>= \y -> setCZN (y - v)
 
 insBPL = brIns bitN False
 insBMI = brIns bitN True
@@ -283,16 +286,16 @@ insPLA = pull >>= setAZN
 
 insNOP = return ()
 
-insINX = gets regX >>= \x -> setXZN $ x + 1
-insDEX = gets regX >>= \x -> setXZN $ x - 1
-insINY = gets regY >>= \y -> setYZN $ y + 1
-insDEY = gets regY >>= \y -> setYZN $ y - 1
+insINX = gets regX >>= setXZN . (+ 1)
+insDEX = gets regX >>= setXZN . (subtract 1)
+insINY = gets regY >>= setYZN . (+ 1)
+insDEY = gets regY >>= setYZN . (subtract 1)
 
-insTAX = modify $ \s -> s { regX = regA s }
-insTXA = modify $ \s -> s { regA = regX s }
-insTAY = modify $ \s -> s { regY = regA s }
-insTYA = modify $ \s -> s { regA = regY s }
+insTAX = gets regA >>= setXZN
+insTXA = gets regX >>= setAZN
+insTAY = gets regA >>= setYZN
+insTYA = gets regY >>= setAZN
 insTXS = modify $ \s -> s { regS = regX s }
-insTSX = modify $ \s -> s { regX = regS s }
+insTSX = gets regS >>= setXZN
 
 insErr = undefined
