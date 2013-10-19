@@ -28,9 +28,10 @@ signExt v = fromIntegral (fromIntegral (fromIntegral v :: Int8) :: Int16)
 
 
 
-data S = S { regA, regX, regY, regP, regS :: Word8
-           , regPC, regAddr :: Word16
+data S = S { regA, regX, regY, regP, regS :: !Word8
+           , regPC :: !Word16
            , memory :: Vector Word8
+           , addrRead, addrWrite :: Maybe Addr
            }
 type St = State S
 
@@ -66,46 +67,53 @@ setYZN = undefined
 
 
 
-fetch :: St Word8
-fetch = (!) <$> gets memory <*> fromIntegral `fmap` (gets regAddr)
+fetch :: Addr -> St Word8
+fetch addr = do
+    mem <- gets memory
+    modify $ \s -> s { addrRead = Just addr }
+    return $ mem ! fromIntegral addr
 
-fetchAddr :: St ()
-fetchAddr = do
+fetchIndirectAddr :: Addr -> St Addr
+fetchIndirectAddr addr = do
+    mem <- gets memory
+    let lo = mem ! fromIntegral addr
+        hi = mem ! fromIntegral (addr + 1)
+    return $ makeAddr lo hi
+
+store :: Addr -> Word8 -> St ()
+store addr v = modify $
+    \s -> s { memory = memory s // upd, addrWrite = Just addr }
+  where
+    upd = [(fromIntegral addr, v)]
+
+clearBus :: St()
+clearBus = modify $ \s -> s { addrRead = Nothing, addrWrite = Nothing }
+
+
+nextPC :: St Addr
+nextPC = do
     s <- get
-    let aLo = regAddr s
-        aHi = aLo + 1
-        lo = memory s ! fromIntegral aLo
-        hi = memory s ! fromIntegral aHi
-    put s { regAddr = makeAddr lo hi }
-
-store :: Word8 -> St ()
-store v = modify $ \s -> s { memory = memory s // [(fromIntegral $ regAddr s, v)] }
-
-
-nextPC :: St ()
-nextPC = modify $ \s -> let pc = regPC  s in s { regPC = pc + 1, regAddr = pc }
+    let pc = regPC s
+    modify $ \s -> s { regPC = pc + 1 }
+    return pc
 
 fetchPC :: St Word8
-fetchPC = nextPC >> fetch
+fetchPC = nextPC >>= fetch
 
-indexX = modify $ \s -> s { regAddr = regAddr s + fromIntegral (regX s) }
-indexY = modify $ \s -> s { regAddr = regAddr s + fromIntegral (regY s) }
+indexX addr = gets regX >>= return . (addr +) . fromIntegral
+indexY addr = gets regY >>= return . (addr +) . fromIntegral
 
 addrImm = nextPC
-addrZero = fetchPC >>= \v -> modify $ \s -> s { regAddr = zeroPage v }
-addrZeroX = fetchPC >>= \v -> modify $ \s -> s { regAddr = zeroPage (v + regX s) }
-addrZeroY = fetchPC >>= \v -> modify $ \s -> s { regAddr = zeroPage (v + regY s) }
-addrRel = fetchPC >>= \v -> modify $ \s -> s { regAddr = regPC s + signExt v }
-addrAbs = do
-    lo <- fetchPC
-    hi <- fetchPC
-    modify $ \s -> s { regAddr = makeAddr lo hi }
-addrAbsX = addrAbs >> indexX
-addrAbsY = addrAbs >> indexY
-addrInd = addrAbs >> fetchAddr
-addrIndIdx = addrZeroX >> fetchAddr
-addrIdxInd = addrZero >> fetchAddr >> indexY
-
+addrZero = zeroPage <$> fetchPC
+addrZeroX = zeroPage <$> ( (+) <$> fetchPC <*> gets regX )
+addrZeroY = zeroPage <$> ( (+) <$> fetchPC <*> gets regY )
+addrRel = (+) <$>  gets regPC <*> (signExt <$> fetchPC)
+addrAbs = makeAddr <$> fetchPC <*> fetchPC
+addrAbsX = addrAbs >>= indexX
+addrAbsY = addrAbs >>= indexY
+addrInd = addrAbs >>= fetchIndirectAddr
+addrIndIdx = addrZeroX >>= fetchIndirectAddr
+addrIdxInd = addrZero >>= fetchIndirectAddr >>= indexY
 
 
 decode :: [St ()]
@@ -157,55 +165,66 @@ decode = concat $ transpose [ col0, col1, col2, col3, col4, col5, col6, col7
                            | otherwise = i : is `except` (n-1, j)
 
 
-aluIns :: (Word8 -> St ()) -> (Word8 -> Word8 -> Word8) -> St () -> St ()
+
+loadIns :: (Word8 -> St ()) -> St Addr -> St ()
+loadIns loader mode = mode >>= fetch >>= loader
+
+storeIns :: St Word8 -> St Addr -> St ()
+storeIns fetcher mode = mode >>= \addr -> fetcher >>= store addr
+
+aluIns :: (Word8 -> St ()) -> (Word8 -> Word8 -> Word8) -> St Addr -> St ()
 aluIns set op mode = do
-    mode
-    v <- fetch
+    v <- mode >>= fetch
     a <- gets regA
     set $ op a v
+
+bitIns :: (Word8 -> Word8) -> St Addr -> St ()
+bitIns op mode = mode >>= \addr -> fetch addr >>= store addr . op
+
+bitAccIns :: (Word8 -> Word8) -> St ()
+bitAccIns op = modify $ \s -> s { regA = op (regA s) }
+
+stIns op bit = modify $ \s -> s { regP = op (regP s) bit }
+
+jump addr = modify $ \s -> s { regPC = addr }
+
+brIns bit t = do
+    addr <- addrRel
+    p <- gets regP
+    when (testBit p bit == t) $ jump addr
+
+
+
 
 insORA = aluIns setAZN (.|.)
 insAND = aluIns setAZN (.&.)
 insEOR = aluIns setAZN xor
 insADC = aluIns setAZCN (+)
-insSTA mode = mode >> gets regA >>= store
+insSTA = storeIns $ gets regA
 insLDA = aluIns setAZN (flip const)
 insCMP = aluIns setZCN subtract
 insSBC = aluIns setAZCN subtract
-
-bitIns :: (Word8 -> Word8) -> St () -> St ()
-bitIns op mode = mode >> fetch >>= store . op
 
 insASL = bitIns (flip shiftL 1)   -- TODO: set flags CZN
 insROL = bitIns (flip rotateL 1)
 insLSR = bitIns (flip shiftR 1)
 insROR = bitIns (flip rotateR 1)
-insSTX mode = mode >> gets regX >>= store
-insLDX mode = mode >> fetch >>= \v -> modify $ \s -> s { regX = v }
+insSTX = storeIns $ gets regX
+insLDX = loadIns $ \v -> modify $ \s -> s { regX = v }
 insDEC = bitIns (subtract 1)
 insINC = bitIns (+ 1)
-
-bitAccIns :: (Word8 -> Word8) -> St ()
-bitAccIns op = modify $ \s -> s { regA = op (regA s) }
 
 insASLacc = bitAccIns (flip shiftL 1)   -- TODO: set flags CZN
 insROLacc = bitAccIns (flip rotateL 1)
 insLSRacc = bitAccIns (flip shiftR 1)
 insRORacc = bitAccIns (flip rotateR 1)
 
-jump = modify $ \s -> s { regPC = regAddr s }
-
 insBIT mode = undefined
-insJMP mode = mode >> jump
-insSTY mode = mode >> gets regY >>= store
-insLDY mode = mode >> fetch >>= \v -> modify $ \s -> s { regY = v }
-insCPX mode = mode >> fetch >>= \v -> gets regX >>= \x -> setZCN (x - v)
-insCPY mode = mode >> fetch >>= \v -> gets regY >>= \y -> setZCN (y - v)
-
-brIns bit t = do
-    addrRel
-    p <- gets regP
-    when (testBit p bit == t) jump
+insJMP mode = mode >>= jump
+insSTY      = storeIns $ gets regY
+insLDY      = loadIns $ \v -> modify $ \s -> s { regY = v }
+insCPX mode = mode >>= fetch >>= \v -> gets regX >>= \x -> setZCN (x - v)
+insCPY mode = mode >>= fetch >>= \v -> gets regY >>= \y -> setZCN (y - v)
 
 insBPL = brIns bitN False
 insBMI = brIns bitN True
@@ -215,8 +234,6 @@ insBCC = brIns bitC False
 insBCS = brIns bitC True
 insBNE = brIns bitZ False
 insBEQ = brIns bitZ True
-
-stIns op bit = modify $ \s -> s { regP = op (regP s) bit }
 
 insCLC = stIns clearBit bitC
 insSEC = stIns setBit   bitC
