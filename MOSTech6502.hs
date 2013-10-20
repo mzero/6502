@@ -59,16 +59,12 @@ setCZN = undefined
 
     setting flags on compare instructions
     setting flags on ADC/SBC instructions
-
     decimal arith. mode
     shifts are bogus
 
     input/output
 
     test suite
-
-    not sure when to set B bit on BRK
-    not sure if page crossing and indexing is correct
 -}
 
 
@@ -80,11 +76,13 @@ fetch addr = do
     return $ mem ! fromIntegral addr
 
 fetchIndirectAddr :: Addr -> St Addr
-fetchIndirectAddr addr = do
+fetchIndirectAddr addr0 = do
     mem <- gets memory
-    let lo = mem ! fromIntegral addr
-        hi = mem ! fromIntegral (addr + 1)
-    return $ makeAddr lo hi
+    let (aLo, aHi) = splitAddr addr0
+        addr1 = makeAddr (aLo + 1) aHi  -- correct! no page crossing allowed
+        bLo = mem ! fromIntegral addr0
+        bHi = mem ! fromIntegral addr1
+    return $ makeAddr bLo bHi
 
 store :: Addr -> Word8 -> St ()
 store addr v = modify $
@@ -222,9 +220,16 @@ brIns bit t = do
     when (testBit p bit == t) $ jump addr
 
 vector addr = fetchIndirectAddr addr >>= jump
-nmiVector = vector 0xFFFA
-resetVector = vector 0xFFFC
-intVector = vector 0xFFFE
+
+interrupt isBrk pcOffset addr = do
+    gets regPC >>= pushAddr . (+ pcOffset)
+    gets regP >>= push . flip (if isBrk then setBit else clearBit) bitB
+    insSEI
+    vector addr
+
+reset = vector 0xFFFC
+nmi = interrupt False 0 0xFFFA
+irq = interrupt False 0 0xFFFE
 
 
 insORA = aluIns setAZN (.|.)
@@ -274,7 +279,7 @@ insCLV = stIns clearBit bitV
 insCLD = stIns clearBit bitD
 insSED = stIns setBit   bitD
 
-insBRK = gets regPC >>= pushAddr . (+ 1) >> insPHP >> insSEI >> intVector
+insBRK = interrupt True 1 0xFFFE
 insJSR = addrAbs >>= \addr -> gets regPC >>= pushAddr . (subtract 1) >> jump addr
 insRTI = insPLP >> pullAddr >>= jump
 insRTS = pullAddr >>= jump . (+ 1)
