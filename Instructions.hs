@@ -1,114 +1,18 @@
-module MOSTech6502
-    ( S
-    , St
-    , decode
+module Instructions
+    ( decode
+    , reset, nmi, irq
     )
   where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when)
-import Control.Monad.State (State, get, gets, modify, put)
-import Data.Bits ((.&.), (.|.), clearBit, rotateL, rotateR, setBit, shiftL, shiftR, testBit, xor)
-import Data.Int (Int8, Int16)
+import Control.Monad.State (get, gets, modify, put)
+import Data.Bits ((.&.), (.|.), clearBit, setBit, shiftL, shiftR, testBit, xor)
 import Data.List (transpose)
-import Data.Vector (Vector, (!), (//))
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 
 import Memory
-
-zeroPage :: Word8 -> Addr
-zeroPage v = makeAddr v 0
-
-
-data S = S { regA, regX, regY, regP, regS :: !Word8
-           , regPC :: !Addr
-           , memory :: !Memory
-           , addrRead, addrWrite :: Maybe Addr
-           }
-type St = State S
-
-[bitN, bitV, _, bitB, bitD, bitI, bitZ, bitC] = [7,6..0]
-
-assignBit bit bool byte = (if bool then setBit else clearBit) byte bit
-
-assignZ v = assignBit bitZ (v == 0)
-assignZN v = assignBit bitZ (v == 0) . assignBit bitN (testBit v 7)
-assign67 v = assignBit bitV (testBit v 6) . assignBit bitN (testBit v 7)
-
-setZN v = modify $ \s -> s { regP = assignZN v $ regP s }
-setAZN v = modify $ \s -> s { regA = v, regP = assignZN v $ regP s }
-setXZN v = modify $ \s -> s { regX = v, regP = assignZN v $ regP s }
-setYZN v = modify $ \s -> s { regY = v, regP = assignZN v $ regP s }
-
-setZVNbit (a,v) = modify $ \s -> s { regP = assignZ (a .&. v) $ assign67 v $ regP s }
-
-setACZN = undefined
-setCZN = undefined
-
-{- TODO
-
-    setting flags on compare instructions
-    setting flags on ADC/SBC instructions
-    decimal arith. mode
-
-    input/output
-
-    test suite
--}
-
-
-
-fetch :: Addr -> St Word8
-fetch addr = do
-    mem <- gets memory
-    modify $ \s -> s { addrRead = Just addr }
-    return $ fetchByte addr mem
-
-fetchIndirectAddr :: Addr -> St Addr
-fetchIndirectAddr addr0 = do
-    mem <- gets memory
-    let addr1 = nextAddrWrap addr0  -- correct! no page crossing allowed
-        bLo = fetchByte addr0 mem
-        bHi = fetchByte addr1 mem
-    return $ makeAddr bLo bHi
-
-store :: Addr -> Word8 -> St ()
-store addr v = modify $
-    \s -> s { memory = storeByte addr v $ memory s, addrWrite = Just addr }
-
-clearBus :: St()
-clearBus = modify $ \s -> s { addrRead = Nothing, addrWrite = Nothing }
-
-
-nextPC :: St Addr
-nextPC = do
-    s <- get
-    let pc = regPC s
-    put s { regPC = nextAddrFull pc }
-    return pc
-
-fetchPC :: St Word8
-fetchPC = nextPC >>= fetch
-
-push :: Word8 -> St ()
-push v = do
-    s <- get
-    let sp = regS s
-    store (makeAddr sp 1) v
-    put s { regS = sp - 1 }
-
-pull :: St Word8
-pull = do
-    s <- get
-    let sp = regS s + 1
-    put s { regS = sp }
-    fetch $ makeAddr sp 1
-
-pushAddr :: Addr -> St ()
-pushAddr addr = let (lo, hi) = splitAddr addr in push hi >> push lo
-
-pullAddr :: St Addr
-pullAddr = makeAddr <$> pull <*> pull
+import CPU
 
 
 indexX addr = gets regX >>= return . indexAddr addr
@@ -171,6 +75,8 @@ decode = concat $ transpose [ col0, col1, col2, col3, col4, col5, col6, col7
                 [insASL, insROL, insLSR, insROR, insSTX, insLDX, insDEC, insINC]
 
     colErr = replicate 16 insErr
+
+    except :: [a] -> (Int, a) -> [a]
     [] `except` _ = []
     (i:is) `except` (n, j) | n == 0    = j : is
                            | otherwise = i : is `except` (n-1, j)

@@ -1,0 +1,20 @@
+Name:            Z6502
+Version:         1.0.0.0
+Author:          Mark Lentczner
+Maintainer:      mark@glyphic.com
+Build-type:      Simple
+Cabal-version:   >=1.8
+
+
+Executable z6502
+  Main-is: Main.hs
+
+  Build-depends:
+    array,
+    base,
+    bytestring,
+    containers,
+    mtl,
+    vector
+
+  ghc-options: -Wall -fwarn-tabs -fno-warn-missing-signatures

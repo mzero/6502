@@ -12,7 +12,7 @@ module Memory
 
 import qualified Data.ByteString as B
 import qualified Data.Vector as V
-import Data.Word (Word8, Word16)
+import Data.Word (Word8)
 
 newtype Addr = Addr (Word8, Word8)      -- lo, hi
 
@@ -52,7 +52,7 @@ relativeAddr (Addr (lo, hi)) off = Addr (lo', hi')
 data Page = Missing | ROM B.ByteString | RAM (V.Vector Word8)
 
 fetchPageByte :: Word8 -> Page -> Word8
-fetchPageByte lo Missing = 0
+fetchPageByte _ Missing = 0
 fetchPageByte lo (ROM bs) = B.index bs $ fromIntegral lo
 fetchPageByte lo (RAM vs) = vs V.! fromIntegral lo
 
