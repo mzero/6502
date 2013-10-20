@@ -14,26 +14,15 @@ import Data.List (transpose)
 import Data.Vector (Vector, (!), (//))
 import Data.Word (Word8, Word16)
 
-type Addr = Word16
-
-makeAddr :: Word8 -> Word8 -> Addr
-makeAddr lo hi = fromIntegral hi `shiftL` 8 .|. fromIntegral lo
-
-splitAddr :: Addr -> (Word8, Word8)   -- lo, hi
-splitAddr addr = (fromIntegral addr, fromIntegral $ addr `shiftR` 8)
+import Memory
 
 zeroPage :: Word8 -> Addr
-zeroPage v = fromIntegral v
-
-signExt :: Word8 -> Word16
-signExt v = fromIntegral (fromIntegral (fromIntegral v :: Int8) :: Int16)
-
-
+zeroPage v = makeAddr v 0
 
 
 data S = S { regA, regX, regY, regP, regS :: !Word8
-           , regPC :: !Word16
-           , memory :: Vector Word8
+           , regPC :: !Addr
+           , memory :: !Memory
            , addrRead, addrWrite :: Maybe Addr
            }
 type St = State S
@@ -73,22 +62,19 @@ fetch :: Addr -> St Word8
 fetch addr = do
     mem <- gets memory
     modify $ \s -> s { addrRead = Just addr }
-    return $ mem ! fromIntegral addr
+    return $ fetchByte addr mem
 
 fetchIndirectAddr :: Addr -> St Addr
 fetchIndirectAddr addr0 = do
     mem <- gets memory
-    let (aLo, aHi) = splitAddr addr0
-        addr1 = makeAddr (aLo + 1) aHi  -- correct! no page crossing allowed
-        bLo = mem ! fromIntegral addr0
-        bHi = mem ! fromIntegral addr1
+    let addr1 = nextAddrWrap addr0  -- correct! no page crossing allowed
+        bLo = fetchByte addr0 mem
+        bHi = fetchByte addr1 mem
     return $ makeAddr bLo bHi
 
 store :: Addr -> Word8 -> St ()
 store addr v = modify $
-    \s -> s { memory = memory s // upd, addrWrite = Just addr }
-  where
-    upd = [(fromIntegral addr, v)]
+    \s -> s { memory = storeByte addr v $ memory s, addrWrite = Just addr }
 
 clearBus :: St()
 clearBus = modify $ \s -> s { addrRead = Nothing, addrWrite = Nothing }
@@ -98,7 +84,7 @@ nextPC :: St Addr
 nextPC = do
     s <- get
     let pc = regPC s
-    put s { regPC = pc + 1 }
+    put s { regPC = nextAddrFull pc }
     return pc
 
 fetchPC :: St Word8
@@ -108,7 +94,7 @@ push :: Word8 -> St ()
 push v = do
     s <- get
     let sp = regS s
-    store (makeAddr 1 sp) v
+    store (makeAddr sp 1) v
     put s { regS = sp - 1 }
 
 pull :: St Word8
@@ -116,7 +102,7 @@ pull = do
     s <- get
     let sp = regS s + 1
     put s { regS = sp }
-    fetch $ makeAddr 1 sp
+    fetch $ makeAddr sp 1
 
 pushAddr :: Addr -> St ()
 pushAddr addr = let (lo, hi) = splitAddr addr in push hi >> push lo
@@ -125,14 +111,14 @@ pullAddr :: St Addr
 pullAddr = makeAddr <$> pull <*> pull
 
 
-indexX addr = gets regX >>= return . (addr +) . fromIntegral
-indexY addr = gets regY >>= return . (addr +) . fromIntegral
+indexX addr = gets regX >>= return . indexAddr addr
+indexY addr = gets regY >>= return . indexAddr addr
 
 addrImm = nextPC
 addrZero = zeroPage <$> fetchPC
 addrZeroX = zeroPage <$> ( (+) <$> fetchPC <*> gets regX )
 addrZeroY = zeroPage <$> ( (+) <$> fetchPC <*> gets regY )
-addrRel = (+) <$>  gets regPC <*> (signExt <$> fetchPC)
+addrRel = relativeAddr <$> gets regPC <*> fetchPC
 addrAbs = makeAddr <$> fetchPC <*> fetchPC
 addrAbsX = addrAbs >>= indexX
 addrAbsY = addrAbs >>= indexY
@@ -234,14 +220,14 @@ rorOp = shiftOp shiftR True  7 0
 vector addr = fetchIndirectAddr addr >>= jump
 
 interrupt isBrk pcOffset addr = do
-    gets regPC >>= pushAddr . (+ pcOffset)
+    gets regPC >>= pushAddr . flip indexAddr pcOffset
     gets regP >>= push . flip (if isBrk then setBit else clearBit) bitB
     insSEI
     vector addr
 
-reset = vector 0xFFFC
-nmi = interrupt False 0 0xFFFA
-irq = interrupt False 0 0xFFFE
+reset = vector (makeAddr 0xFC 0xFF) -- 0xFFFC
+nmi = interrupt False 0 (makeAddr 0xFA 0xFF) -- 0xFFFA
+irq = interrupt False 0 (makeAddr 0xFE 0xFF) -- 0xFFFE
 
 
 insORA = aluIns setAZN (.|.)
@@ -291,10 +277,10 @@ insCLV = stIns clearBit bitV
 insCLD = stIns clearBit bitD
 insSED = stIns setBit   bitD
 
-insBRK = interrupt True 1 0xFFFE
-insJSR = addrAbs >>= \addr -> gets regPC >>= pushAddr . (subtract 1) >> jump addr
+insBRK = interrupt True 1 (makeAddr 0xFE 0xFF)
+insJSR = addrAbs >>= \addr -> gets regPC >>= pushAddr . prevAddrFull >> jump addr
 insRTI = insPLP >> pullAddr >>= jump
-insRTS = pullAddr >>= jump . (+ 1)
+insRTS = pullAddr >>= jump . nextAddrFull
 
 insPHP = gets regP >>= push
 insPLP = pull >>= \v -> modify $ \s -> s { regP = v }
