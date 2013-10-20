@@ -1,5 +1,5 @@
 module Instructions
-    ( decode
+    ( executeOne
     , reset, nmi, irq
     )
   where
@@ -9,6 +9,7 @@ import Control.Monad (when)
 import Control.Monad.State (get, gets, modify, put)
 import Data.Bits ((.&.), (.|.), clearBit, setBit, shiftL, shiftR, testBit, xor)
 import Data.List (transpose)
+import qualified Data.Vector as V
 import Data.Word (Word8)
 
 import Memory
@@ -31,9 +32,10 @@ addrIndIdx = addrZeroX >>= fetchIndirectAddr
 addrIdxInd = addrZero >>= fetchIndirectAddr >>= indexY
 
 
-decode :: [St ()]
-decode = concat $ transpose [ col0, col1, col2, col3, col4, col5, col6, col7
-                            , col8, col9, colA, colB, colC, colD, colE, colF ]
+decode :: V.Vector (St ())
+decode = V.fromList $ concat $ transpose
+    [ col0, col1, col2, col3, col4, col5, col6, col7
+    , col8, col9, colA, colB, colC, colD, colE, colF ]
   where
     col0 = [ insBRK,         insBPL, insJSR,         insBMI
            , insRTI,         insBVC, insRTS,         insBVS
@@ -208,3 +210,7 @@ insTXS = modify $ \s -> s { regS = regX s }
 insTSX = gets regS >>= setXZN
 
 insErr = undefined
+
+
+executeOne :: St ()
+executeOne = clearBus >> fetchPC >>= (decode V.!) . fromIntegral

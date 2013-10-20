@@ -1,6 +1,7 @@
 module Memory
     ( Addr, makeAddr, splitAddr
-    , nextAddrWrap, nextAddrFull, prevAddrFull
+    , nextAddrWrap, nextAddrFull
+    , prevAddrWrap, prevAddrFull
     , indexAddr, relativeAddr
 
     , Memory
@@ -15,6 +16,7 @@ import qualified Data.Vector as V
 import Data.Word (Word8)
 
 newtype Addr = Addr (Word8, Word8)      -- lo, hi
+    deriving (Eq, Show)
 
 makeAddr :: Word8 -> Word8 -> Addr
 makeAddr lo hi = Addr (lo, hi)
@@ -24,6 +26,9 @@ splitAddr (Addr lohi) = lohi
 
 nextAddrWrap :: Addr -> Addr
 nextAddrWrap (Addr (lo, hi)) = Addr (lo + 1, hi)
+
+prevAddrWrap :: Addr -> Addr
+prevAddrWrap (Addr (lo, hi)) = Addr (lo -  1, hi)
 
 nextAddrFull :: Addr -> Addr
 nextAddrFull (Addr (lo, hi)) | lo == 0xFF = Addr (0, hi + 1)

@@ -1,0 +1,36 @@
+
+
+AND, DEC, DEX, DEY, EOR, INC, INX, INY, LDA, LDX, LDY,
+ORA, PLA, TAX, TAY, TSX, TXA, TYA
+    Z if 0
+    N bit 7
+
+ASL, LSR, ROL, ROR
+    C if shift out
+    Z if 0
+    N bit 7
+
+CMP, CPX, CPY
+    C if not borrow
+    Z if 0
+    N bit 7
+
+BIT
+    Z if 0
+    V bit 6 (of operand)
+    N bit 7 (of operand)
+
+ADC, SBC
+    C if carry / not borrow
+    Z if 0
+    V if overflow
+    N bit 7
+
+
+
+BRK
+    B 1
+
+CLC, CLD, CLI, CLV, PLP, RTI, SEC, SED, SEI
+    as indicated
+

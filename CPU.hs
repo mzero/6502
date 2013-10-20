@@ -1,5 +1,5 @@
 module CPU
-    ( S(..)
+    ( S(..), powerOnState
     , St
 
     , zeroPage
@@ -37,6 +37,14 @@ data S = S { regA, regX, regY, regP, regS :: !Word8
            , addrRead, addrWrite :: Maybe Addr
            }
 type St = State S
+
+powerOnState :: S
+powerOnState = S
+        { regA = 0, regX = 0, regY = 0, regP = 0, regS = 0
+        , regPC = makeAddr 0 0xFF
+        , memory = emptyMemory
+        , addrRead = Nothing, addrWrite = Nothing
+        }
 
 [bitN, bitV, _, bitB, bitD, bitI, bitZ, bitC] = [7,6..0]
 
