@@ -17,10 +17,10 @@ import Data.Word (Word8, Word16)
 type Addr = Word16
 
 makeAddr :: Word8 -> Word8 -> Addr
-makeAddr lo hi = fromIntegral hi `shiftL` 16 .|. fromIntegral lo
+makeAddr lo hi = fromIntegral hi `shiftL` 8 .|. fromIntegral lo
 
 splitAddr :: Addr -> (Word8, Word8)   -- lo, hi
-splitAddr addr = (fromIntegral addr, fromIntegral $ addr `shiftR` 16)
+splitAddr addr = (fromIntegral addr, fromIntegral $ addr `shiftR` 8)
 
 zeroPage :: Word8 -> Addr
 zeroPage v = fromIntegral v
@@ -46,6 +46,7 @@ assignZ v = assignBit bitZ (v == 0)
 assignZN v = assignBit bitZ (v == 0) . assignBit bitN (testBit v 7)
 assign67 v = assignBit bitV (testBit v 6) . assignBit bitN (testBit v 7)
 
+setZN v = modify $ \s -> s { regP = assignZN v $ regP s }
 setAZN v = modify $ \s -> s { regA = v, regP = assignZN v $ regP s }
 setXZN v = modify $ \s -> s { regX = v, regP = assignZN v $ regP s }
 setYZN v = modify $ \s -> s { regY = v, regP = assignZN v $ regP s }
@@ -60,7 +61,6 @@ setCZN = undefined
     setting flags on compare instructions
     setting flags on ADC/SBC instructions
     decimal arith. mode
-    shifts are bogus
 
     input/output
 
@@ -203,12 +203,11 @@ aluIns set op mode = do
     a <- gets regA
     set $ op a v
 
-modIns :: (Word8 -> Word8) -> St Addr -> St ()
-modIns op mode = mode >>= \addr -> fetch addr >>= store addr . op
-    -- TODO: Need to set ZN flags
+modIns :: (Word8 -> St Word8) -> St Addr -> St ()
+modIns op mode = mode >>= \addr -> fetch addr >>= op >>= store addr
 
-modAccIns :: (Word8 -> Word8) -> St ()
-modAccIns op = modify $ \s -> s { regA = op (regA s) }
+modAccIns :: (Word8 -> St Word8) -> St ()
+modAccIns op = gets regA >>= op >>= \v -> modify $ \s -> s { regA = v }
 
 stIns op bit = modify $ \s -> s { regP = op (regP s) bit }
 
@@ -218,6 +217,19 @@ brIns bit t = do
     addr <- addrRel
     p <- gets regP
     when (testBit p bit == t) $ jump addr
+
+shiftOp shifter isRot inBit outBit v = do
+    s <- get
+    let newC = testBit v outBit
+        bitIn = assignBit inBit $ isRot && testBit (regP s) bitC
+        v' = bitIn $ shifter v 1
+    put s { regP = assignBit bitC newC $ assignZN v' $ regP s }
+    return v'
+
+aslOp = shiftOp shiftL False 0 7
+rolOp = shiftOp shiftL True  0 7
+lsrOp = shiftOp shiftR False 7 0
+rorOp = shiftOp shiftR True  7 0
 
 vector addr = fetchIndirectAddr addr >>= jump
 
@@ -241,19 +253,19 @@ insLDA = loadIns setAZN
 insCMP = aluIns setCZN subtract
 insSBC = aluIns setACZN subtract
 
-insASL = modIns (flip shiftL 1)   -- TODO: set flags CZN
-insROL = modIns (flip rotateL 1)
-insLSR = modIns (flip shiftR 1)
-insROR = modIns (flip rotateR 1)
+insASL = modIns aslOp
+insROL = modIns rolOp
+insLSR = modIns lsrOp
+insROR = modIns rorOp
 insSTX = storeIns $ gets regX
 insLDX = loadIns setXZN
-insDEC = modIns (subtract 1)
-insINC = modIns (+ 1)
+insDEC = modIns $ \v -> let v' = v - 1 in setZN v' >> return v'
+insINC = modIns $ \v -> let v' = v + 1 in setZN v' >> return v'
 
-insASLacc = modAccIns (flip shiftL 1)   -- TODO: set flags CZN
-insROLacc = modAccIns (flip rotateL 1)
-insLSRacc = modAccIns (flip shiftR 1)
-insRORacc = modAccIns (flip rotateR 1)
+insASLacc = modAccIns aslOp
+insROLacc = modAccIns rolOp
+insLSRacc = modAccIns lsrOp
+insRORacc = modAccIns rorOp
 
 insBIT      = aluIns setZVNbit (,)
 insJMP mode = mode >>= jump
