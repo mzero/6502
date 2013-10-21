@@ -80,15 +80,19 @@ configureAll s (a:as) =
 
 run :: S -> IO ()
 run s0 = do
+    putStr disasmSpacer
     putStrLn $ dumpReg s0
-    let pc0 = regPC s0
-        s1 = execState executeOne s0
-        pc1 = regPC s1
-    if pc0 /= pc1
-        then run s1
-        else do
-            putStrLn $ "Execution snagged at " ++ show pc1
-            putStrLn $ dumpReg s1
+    run' s0
+  where
+    run' s = do
+        putStr $ disasm s
+        let pc = regPC s
+            s' = execState executeOne s
+            pc' = regPC s'
+        putStrLn $ dumpReg s'
+        if pc /= pc'
+            then run' s'
+            else putStrLn $ "Execution snagged at " ++ show pc'
 
 main :: IO ()
 main = getArgs >>= configureAll powerOnState >>= either putStrLn run
