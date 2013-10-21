@@ -36,3 +36,5 @@ CLC, CLD, CLI, CLV, PLP, RTI, SEC, SED, SEI
 
 Bugs while debugging
 1. hadn't implemented cmp
+2. missed the two LDX instruction exceptions
+    (need to use Y addressing in a column that uses X)

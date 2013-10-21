@@ -53,6 +53,7 @@ decode = V.fromList $ concat $ transpose
            ]
     col5 = colAlu addrZero addrZeroX
     col6 = colBit addrZero addrZeroX `except` (0x9, insSTX addrZeroY)
+                                     `except` (0xB, insLDX addrZeroY)
     col7 = colErr
 
     col8 = [ insPHP, insCLC, insPLP, insSEC, insPHA, insCLI, insPLA, insSEI
@@ -69,6 +70,7 @@ decode = V.fromList $ concat $ transpose
            ]
     colD = colAlu addrAbs addrAbsX
     colE = colBit addrAbs addrAbsX `except` (0x9, insErr)
+                                   `except` (0xB, insLDX addrAbsY)
     colF = colErr
 
     colAlu e o = concatMap (\i -> [i e, i o])
