@@ -40,3 +40,4 @@ Bugs while debugging
     (need to use Y addressing in a column that uses X)
 3. order of operations in addrRel
     (must add rel offset to the PC after having fetch the rel)
+4. confused IndIdx and IdxInd in creation of col4 opcodes

@@ -42,7 +42,7 @@ decode = V.fromList $ concat $ transpose
            , insErr,         insBCC, insLDY addrImm, insBCS
            , insCPY addrImm, insBNE, insCPX addrImm, insBEQ
            ]
-    col1 = colAlu addrIdxInd addrIndIdx
+    col1 = colAlu addrIndIdx addrIdxInd
     col2 = colErr `except` (0xA, insLDX addrImm)
     col3 = colErr
 
