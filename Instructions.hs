@@ -23,7 +23,7 @@ addrImm = nextPC
 addrZero = zeroPage <$> fetchPC
 addrZeroX = zeroPage <$> ( (+) <$> fetchPC <*> gets regX )
 addrZeroY = zeroPage <$> ( (+) <$> fetchPC <*> gets regY )
-addrRel = relativeAddr <$> gets regPC <*> fetchPC
+addrRel = flip relativeAddr <$> fetchPC <*> gets regPC
 addrAbs = makeAddr <$> fetchPC <*> fetchPC
 addrAbsX = addrAbs >>= indexX
 addrAbsY = addrAbs >>= indexY
