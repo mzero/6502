@@ -19,12 +19,12 @@ dumpReg s = regs ++ flags ++ stack ++ busRead ++ busWrite
   where
     regs = printf "A:%02x X:%02x Y:%02x" (regA s) (regX s) (regY s)
     flags = "  " ++ pStr (regP s)
-    stack = printf "  SP:%02x/%02x %02x %02x" (regS s) sp3 sp2 sp1
+    stack = printf "  SP:%02x/%02x %02x %02x" (regS s) sp1 sp2 sp3
     busRead = maybe "        " (bus 'R') $ addrRead s
     busWrite = maybe "        " (bus 'W') $ addrWrite s
 
     mem = memory s
-    (_:sp1:sp2:sp3:_) = map (flip fetchByte mem) $ iterate prevAddrWrap $ makeAddr (regS s) 1
+    (_:sp1:sp2:sp3:_) = map (flip fetchByte mem) $ iterate nextAddrWrap $ makeAddr (regS s) 1
     pStr v = zipWith (\c b -> if testBit v b then c else '-') "NVDIZC" [7,6,3,2,1,0]
     bus t addr = let (lo,hi) = splitAddr addr in printf "  %c:%02x%02x" t hi lo
 

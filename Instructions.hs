@@ -222,7 +222,7 @@ insTYA = gets regY >>= setAZN
 insTXS = modify $ \s -> s { regS = regX s }
 insTSX = gets regS >>= setXZN
 
-insErr = undefined
+insErr = gets regPC >>= jump . prevAddrFull     -- causes a snag, which halts
 
 
 executeOne :: St ()

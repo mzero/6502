@@ -16,7 +16,6 @@ import Memory
 {- TODO
     decimal arith. mode
     input/output
-    test suite
 -}
 
 

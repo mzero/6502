@@ -34,6 +34,13 @@ BRK
 CLC, CLD, CLI, CLV, PLP, RTI, SEC, SED, SEI
     as indicated
 
+
+
+AllSuiteA test:
+    rom=40,roms/AllSuiteA.bin ram=00,64 reset
+
+
+
 Bugs while debugging
 1. hadn't implemented cmp
 2. missed the two LDX instruction exceptions
