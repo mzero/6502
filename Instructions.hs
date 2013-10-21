@@ -7,7 +7,7 @@ module Instructions
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when)
 import Control.Monad.State (get, gets, modify, put)
-import Data.Bits ((.&.), (.|.), clearBit, setBit, shiftL, shiftR, testBit, xor)
+import Data.Bits ((.&.), (.|.), clearBit, complement, setBit, shiftL, shiftR, testBit, xor)
 import Data.List (transpose)
 import qualified Data.Vector as V
 import Data.Word (Word8)
@@ -114,6 +114,15 @@ brIns bit t = do
     p <- gets regP
     when (testBit p bit == t) $ jump addr
 
+adcOp a b cIn = (cOut, v, s)
+  where
+    h = b + (if cIn then 1 else 0)
+    s = a + h
+    cOut = h < b || s < a
+    v = testBit (a `xor` s .&. b `xor` s) 7
+sbcOp a b cIn = adcOp a (complement b) cIn
+setACZVNwithCarry f = gets regP >>= setACZVN . f . flip testBit bitC
+
 cmpOp a b = (a >= b, a - b)
 
 shiftOp shifter isRot inBit outBit v = do
@@ -145,11 +154,11 @@ irq = interrupt False 0 (makeAddr 0xFE 0xFF) -- 0xFFFE
 insORA = aluIns setAZN (.|.)
 insAND = aluIns setAZN (.&.)
 insEOR = aluIns setAZN xor
-insADC = aluIns setACZN (+)
+insADC = aluIns setACZVNwithCarry adcOp
 insSTA = storeIns $ gets regA
 insLDA = loadIns setAZN
 insCMP = aluIns setCZN cmpOp
-insSBC = aluIns setACZN subtract
+insSBC = aluIns setACZVNwithCarry sbcOp
 
 insASL = modIns aslOp
 insROL = modIns rolOp

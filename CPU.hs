@@ -9,7 +9,7 @@ module CPU
     , assignZN
 
     , setZN, setAZN, setXZN, setYZN
-    , setZVNbit, setACZN, setCZN
+    , setZVNbit, setACZVN, setCZN
 
     , fetch, store
     , clearBus
@@ -61,7 +61,8 @@ setYZN v = modify $ \s -> s { regY = v, regP = assignZN v $ regP s }
 
 setZVNbit (a,v) = modify $ \s -> s { regP = assignZ (a .&. v) $ assign67 v $ regP s }
 
-setACZN = undefined
+setACZVN (c,v,a) = modify $ \s ->
+    s { regA = a, regP = assignBit bitC c $ assignBit bitV v $ assignZN a $ regP s }
 setCZN (c,v) = modify $ \s -> s { regP = assignBit bitC c $ assignZN v $ regP s }
 
 

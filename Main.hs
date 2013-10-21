@@ -14,13 +14,8 @@ import Memory
 
 
 {- TODO
-
-    setting flags on compare instructions
-    setting flags on ADC/SBC instructions
     decimal arith. mode
-
     input/output
-
     test suite
 -}
 
