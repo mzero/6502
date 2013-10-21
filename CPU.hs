@@ -95,7 +95,7 @@ nextPC = do
     return pc
 
 fetchPC :: St Word8
-fetchPC = nextPC >>= fetch
+fetchPC = nextPC >>= \addr -> gets memory >>= return . fetchByte addr
 
 push :: Word8 -> St ()
 push v = do

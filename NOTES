@@ -41,3 +41,4 @@ Bugs while debugging
 3. order of operations in addrRel
     (must add rel offset to the PC after having fetch the rel)
 4. confused IndIdx and IdxInd in creation of col4 opcodes
+5. was setting addrRead in fetchPC, but we should use that only for data reads
