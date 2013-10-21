@@ -34,3 +34,5 @@ BRK
 CLC, CLD, CLI, CLV, PLP, RTI, SEC, SED, SEI
     as indicated
 
+Bugs while debugging
+1. hadn't implemented cmp

@@ -62,7 +62,7 @@ setYZN v = modify $ \s -> s { regY = v, regP = assignZN v $ regP s }
 setZVNbit (a,v) = modify $ \s -> s { regP = assignZ (a .&. v) $ assign67 v $ regP s }
 
 setACZN = undefined
-setCZN = undefined
+setCZN (c,v) = modify $ \s -> s { regP = assignBit bitC c $ assignZN v $ regP s }
 
 
 fetch :: Addr -> St Word8

@@ -112,6 +112,8 @@ brIns bit t = do
     p <- gets regP
     when (testBit p bit == t) $ jump addr
 
+cmpOp a b = (a >= b, a - b)
+
 shiftOp shifter isRot inBit outBit v = do
     s <- get
     let newC = testBit v outBit
@@ -144,7 +146,7 @@ insEOR = aluIns setAZN xor
 insADC = aluIns setACZN (+)
 insSTA = storeIns $ gets regA
 insLDA = loadIns setAZN
-insCMP = aluIns setCZN subtract
+insCMP = aluIns setCZN cmpOp
 insSBC = aluIns setACZN subtract
 
 insASL = modIns aslOp
@@ -165,8 +167,8 @@ insBIT      = aluIns setZVNbit (,)
 insJMP mode = mode >>= jump
 insSTY      = storeIns $ gets regY
 insLDY      = loadIns setYZN
-insCPX mode = mode >>= fetch >>= \v -> gets regX >>= \x -> setCZN (x - v)
-insCPY mode = mode >>= fetch >>= \v -> gets regY >>= \y -> setCZN (y - v)
+insCPX mode = gets regX >>= \x -> mode >>= fetch >>= setCZN . cmpOp x
+insCPY mode = gets regY >>= \y -> mode >>= fetch >>= setCZN . cmpOp y
 
 insBPL = brIns bitN False
 insBMI = brIns bitN True
