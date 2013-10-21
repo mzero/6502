@@ -142,7 +142,7 @@ vector addr = fetchIndirectAddr addr >>= jump
 
 interrupt isBrk pcOffset addr = do
     gets regPC >>= pushAddr . flip indexAddr pcOffset
-    gets regP >>= push . flip (if isBrk then setBit else clearBit) bitB
+    pushP isBrk
     insSEI
     vector addr
 
@@ -203,8 +203,8 @@ insJSR = addrAbs >>= \addr -> gets regPC >>= pushAddr . prevAddrFull >> jump add
 insRTI = insPLP >> pullAddr >>= jump
 insRTS = pullAddr >>= jump . nextAddrFull
 
-insPHP = gets regP >>= push
-insPLP = pull >>= \v -> modify $ \s -> s { regP = v }
+insPHP = pushP True
+insPLP = pullP
 insPHA = gets regA >>= push
 insPLA = pull >>= setAZN
 

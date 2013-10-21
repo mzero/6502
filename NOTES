@@ -45,3 +45,4 @@ Bugs while debugging
 6. confusion of using get/put idiom around something that modified state
     in push implementation
 7. hadn't implemented adc & sbc
+8. mishandling B and unknown bits in BRK and PHP

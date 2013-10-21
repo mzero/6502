@@ -3,7 +3,7 @@ module CPU
     , St
 
     , zeroPage
-    , bitN, bitV, bitB, bitD, bitI, bitZ, bitC
+    , bitN, bitV, bitD, bitI, bitZ, bitC
 
     , assignBit
     , assignZN
@@ -16,7 +16,7 @@ module CPU
     , fetchIndirectAddr
     , nextPC, fetchPC
 
-    , push, pull, pushAddr, pullAddr
+    , push, pull, pushAddr, pullAddr, pushP, pullP
     )
   where
 
@@ -46,7 +46,7 @@ powerOnState = S
         , addrRead = Nothing, addrWrite = Nothing
         }
 
-[bitN, bitV, _, bitB, bitD, bitI, bitZ, bitC] = [7,6..0]
+[bitN, bitV, bitX, bitB, bitD, bitI, bitZ, bitC] = [7,6..0]
 
 assignBit bit bool byte = (if bool then setBit else clearBit) byte bit
 
@@ -117,3 +117,9 @@ pushAddr addr = let (lo, hi) = splitAddr addr in push hi >> push lo
 
 pullAddr :: St Addr
 pullAddr = makeAddr <$> pull <*> pull
+
+pushP :: Bool -> St ()
+pushP fromSW = gets regP >>= push . assignBit bitX True . assignBit bitB fromSW
+
+pullP :: St ()
+pullP = pull >>= \v -> modify $ \s -> s { regP = v .&. 0xCF }

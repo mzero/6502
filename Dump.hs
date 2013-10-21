@@ -25,7 +25,7 @@ dumpReg s = regs ++ flags ++ stack ++ busRead ++ busWrite
 
     mem = memory s
     (_:sp1:sp2:sp3:_) = map (flip fetchByte mem) $ iterate prevAddrWrap $ makeAddr (regS s) 1
-    pStr v = zipWith (\c b -> if testBit v b then c else '-') "NV?BDIZC" [7,6..0]
+    pStr v = zipWith (\c b -> if testBit v b then c else '-') "NVDIZC" [7,6,3,2,1,0]
     bus t addr = let (lo,hi) = splitAddr addr in printf "  %c:%02x%02x" t hi lo
 
 disasm :: S -> String
