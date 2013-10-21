@@ -101,8 +101,8 @@ push :: Word8 -> St ()
 push v = do
     s <- get
     let sp = regS s
-    store (makeAddr sp 1) v
     put s { regS = sp - 1 }
+    store (makeAddr sp 1) v
 
 pull :: St Word8
 pull = do

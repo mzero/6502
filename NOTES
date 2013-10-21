@@ -42,3 +42,5 @@ Bugs while debugging
     (must add rel offset to the PC after having fetch the rel)
 4. confused IndIdx and IdxInd in creation of col4 opcodes
 5. was setting addrRead in fetchPC, but we should use that only for data reads
+6. confusion of using get/put idiom around something that modified state
+    in push implementation
