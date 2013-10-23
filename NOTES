@@ -37,8 +37,10 @@ CLC, CLD, CLI, CLV, PLP, RTI, SEC, SED, SEI
 
 
 AllSuiteA test:
-    rom=40,roms/AllSuiteA.bin ram=00,64 reset
+    rom=40,roms/AllSuiteA.bin ram=00,64 reset trace
 
+Enhanced BASIC:
+    rom=c0,roms/ehbasic.bin ram=00,128 reset io
 
 
 Bugs while debugging
@@ -53,3 +55,17 @@ Bugs while debugging
     in push implementation
 7. hadn't implemented adc & sbc
 8. mishandling B and unknown bits in BRK and PHP
+
+
+
+
+Here's ehBASIC's input spin loop:
+
+c24f: JSR $e0ea     A:00 X:17 Y:0e  ----Z-  SP:fb/51 c2 4a          W:01fc
+e0ea: JMP ($0205)   A:00 X:17 Y:0e  ----Z-  SP:fb/51 c2 4a
+ffb3: LDA $f004     A:00 X:17 Y:0e  ----Z-  SP:fb/51 c2 4a  R:f004
+ffb6: BEQ $02       A:00 X:17 Y:0e  ----Z-  SP:fb/51 c2 4a
+ffba: CLC           A:00 X:17 Y:0e  ----Z-  SP:fb/51 c2 4a
+ffbb: RTS           A:00 X:17 Y:0e  ----Z-  SP:fd/4a c0 00  R:01fd
+c252: BCC $fb       A:00 X:17 Y:0e  ----Z-  SP:fd/4a c0 00
+
