@@ -109,57 +109,100 @@ configureAll c [] = return $ Right c
 configureAll c (a:as) =
     configure a c >>= either (return . Left) (\c' -> configureAll c' as)
 
+type Start a = S -> IO (a,S)
+type Step a = a -> S -> IO (a,S)
+type Finish a = a -> S -> IO S
 
-run :: Config -> IO ()
-run conf = do
-    when (confTrace conf) $ do
-        hPutStr stderr disasmSpacer
-        hPutStrLn stderr $ dumpReg s0
-    restore <- if confIO conf then setupIO else return (return ())
-    run' s0
-    restore
+type Exec a = (Start a, Step a, Finish a)
+type Wrap a b = Exec b -> Exec (a, b)
+
+wrap :: Start a -> Step a -> Step a -> Finish a -> Exec b -> Exec (a,b)
+wrap startA preA postA finishA (startB, stepB, finishB) = (startAB, stepAB, finishAB)
   where
-    s0 = confState conf
-    run' s = do
-        when (confTrace conf) $  hPutStr stderr $ disasm s
-        let pc = regPC s
-            s' = execState executeOne s
-            pc' = regPC s'
-        when (confTrace conf) $ hPutStrLn stderr $ dumpReg s'
-        s'' <- if confIO conf then handleIO s' else return s'
-        if True  -- pc /= pc'
-            then run' s''
-            else putStrLn $ "Execution snagged at " ++ show pc'
+    startAB s = do
+        (a1,s1) <- startA s
+        (b2,s2) <- startB s1
+        return ((a1,b2),s2)
+    stepAB (a,b) s = do
+        (a1,s1) <- preA a s
+        (b2,s2) <- stepB b s1
+        (a3,s3) <- postA a1 s2
+        return ((a3,b2),s3)
+    finishAB (a,b) s = finishB b s >>= finishA a
 
-    setupIO = do
+execBase :: Exec ()
+execBase = (start, step, finish)
+  where
+    start s = return ((),s)
+    step () s = return ((), execState executeOne s)
+    finish () s = return s
+
+wrapTrace :: Wrap () b
+wrapTrace = wrap start pre post finish
+  where
+    start s = hPutStr stderr disasmSpacer >> hPutStrLn stderr (dumpReg s) >> r s
+    pre () s = hPutStr stderr (disasm s) >> r s
+    post () s = hPutStrLn stderr (dumpReg s) >> r s
+    finish () s = return s
+    r s = return ((), s)
+
+wrapIO :: Wrap (Int, IO ()) b
+wrapIO = wrap start pre post finish
+  where
+    start s = do
         ibuf <- hGetBuffering stdin
         obuf <- hGetBuffering stdout
         iecho <- hGetEcho stdin
         hSetBuffering stdin NoBuffering
         hSetBuffering stdout NoBuffering
         hSetEcho stdin False
-        return $ do
+        let cleanUp = do
             hSetEcho stdin iecho
             hSetBuffering stdin ibuf
             hSetBuffering stdout obuf
             putStr "\n\n"
-
-    handleIO s = do
+        return ((0, cleanUp), s)
+    pre (n,cleanUp) s = return ((n+1,cleanUp),s)
+    post a@(n,cleanUp) s = do
         when (addrWrite s == Just outPortAddr) $ do
             let c = fetchByte outPortAddr $ memory s
             when (c /= 0) $ hPutChar stdout $ toEnum $ fromIntegral c
         if (addrRead s == Just inPortAddr)
             then do
-                r <- hReady stdin
-                -- r <- hWaitForInput stdin 50 -- hReady stdin
+                r <- if n < 16
+                        then hWaitForInput stdin 50
+                        else hReady stdin
                 c <- if r then (fromIntegral . fromEnum) <$> hGetChar stdin else return 0
                 let c' = if c == 0xA then 0xD else c
-                return s { memory = storeByte inPortAddr c' $ memory s }
-            else return s
+                let s' = s { memory = storeByte inPortAddr c' $ memory s }
+                return ((0,cleanUp),s')
+            else return (a,s)
+    finish (_,cleanUp) s = cleanUp >> return s
 
     inPortAddr = makeAddr 0x04 0xF0
     outPortAddr = makeAddr 0x01 0xF0
 
+exec :: Exec a -> S -> IO ()
+exec (start, step, stop) s0 = start s0 >>= loop >>= uncurry stop >> return ()
+  where
+    loop (a,s) = do
+        let pcsp = (regPC s, regS s)
+        as'@(_,s') <- step a s
+        let pcsp' = (regPC s', regS s')
+        if pcsp /= pcsp'
+            then loop as'
+            else do
+                putStrLn $ "Execution snagged at " ++ show (fst pcsp')
+                return as'
+
+
 main :: IO ()
 main = getArgs >>= configureAll config0 >>= either putStrLn run
+  where
+    run c = ($ confState c) $ case (confTrace c, confIO c) of
+        (False, False) -> exec execBase
+        (False, True) -> exec $ wrapIO execBase
+        (True, False) -> exec $ wrapTrace execBase
+        (True, True) -> exec $ wrapIO $ wrapTrace execBase
+
 
