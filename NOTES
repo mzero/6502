@@ -42,6 +42,16 @@ AllSuiteA test:
 Enhanced BASIC:
     rom=c0,roms/ehbasic.bin ram=00,128 reset io
 
+10 FOR I = 1 TO 10
+20 FOR J = 1 TO I
+30 PRINT J;
+40 NEXT J
+50 PRINT
+60 NEXT I
+RUN
+
+
+
 
 Bugs while debugging
 1. hadn't implemented cmp

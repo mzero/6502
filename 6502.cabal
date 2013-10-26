@@ -18,3 +18,16 @@ Executable z6502
     vector
 
   ghc-options: -Wall -fwarn-tabs -fno-warn-missing-signatures
+
+Executable z6502min
+  Main-is: Z6502.hs
+
+  Build-depends:
+    array,
+    base,
+    bytestring,
+    containers,
+    mtl,
+    vector
+
+  ghc-options: -Wall -fwarn-tabs -fno-warn-missing-signatures
