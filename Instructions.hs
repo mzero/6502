@@ -37,23 +37,23 @@ decode = V.fromList $ concat $ transpose
     [ col0, col1, col2, col3, col4, col5, col6, col7
     , col8, col9, colA, colB, colC, colD, colE, colF ]
   where
-    col0 = [ insBRK,         insBPL, insJSR,         insBMI
-           , insRTI,         insBVC, insRTS,         insBVS
-           , insErr,         insBCC, insLDY addrImm, insBCS
-           , insCPY addrImm, insBNE, insCPX addrImm, insBEQ
+    col0 = [ insBRK,           insBPL, insJSR,           insBMI
+           , insRTI,           insBVC, insRTS,           insBVS
+           , insErr,           insBCC, insLDY & addrImm, insBCS
+           , insCPY & addrImm, insBNE, insCPX & addrImm, insBEQ
            ]
     col1 = colAlu addrIndIdx addrIdxInd
-    col2 = colErr `except` (0xA, insLDX addrImm)
+    col2 = colErr `except` (0xA, insLDX & addrImm)
     col3 = colErr
 
-    col4 = [ insErr,          insErr,           insBIT addrZero, insErr
-           , insErr,          insErr,           insErr,          insErr
-           , insSTY addrZero, insSTY addrZeroX, insLDY addrZero, insLDY addrZeroX
-           , insCPY addrZero, insErr,           insCPX addrZero, insErr
+    col4 = [ insErr,            insErr,             insBIT & addrZero, insErr
+           , insErr,            insErr,             insErr,            insErr
+           , insSTY & addrZero, insSTY & addrZeroX, insLDY & addrZero, insLDY & addrZeroX
+           , insCPY & addrZero, insErr,             insCPX & addrZero, insErr
            ]
     col5 = colAlu addrZero addrZeroX
-    col6 = colBit addrZero addrZeroX `except` (0x9, insSTX addrZeroY)
-                                     `except` (0xB, insLDX addrZeroY)
+    col6 = colBit addrZero addrZeroX `except` (0x9, insSTX & addrZeroY)
+                                     `except` (0xB, insLDX & addrZeroY)
     col7 = colErr
 
     col8 = [ insPHP, insCLC, insPLP, insSEC, insPHA, insCLI, insPLA, insSEI
@@ -63,19 +63,19 @@ decode = V.fromList $ concat $ transpose
            , insTXA, insTXS, insTAX, insTSX, insDEX, insErr, insNOP, insErr ]
     colB = colErr
 
-    colC = [ insErr,         insErr, insBIT addrAbs, insErr
-           , insJMP addrAbs, insErr, insJMP addrInd, insErr
-           , insSTY addrAbs, insErr, insLDY addrAbs, insLDY addrAbsX
-           , insCPY addrAbs, insErr, insCPX addrAbs, insErr
+    colC = [ insErr,           insErr, insBIT & addrAbs, insErr
+           , insJMP & addrAbs, insErr, insJMP & addrInd, insErr
+           , insSTY & addrAbs, insErr, insLDY & addrAbs, insLDY & addrAbsX
+           , insCPY & addrAbs, insErr, insCPX & addrAbs, insErr
            ]
     colD = colAlu addrAbs addrAbsX
     colE = colBit addrAbs addrAbsX `except` (0x9, insErr)
-                                   `except` (0xB, insLDX addrAbsY)
+                                   `except` (0xB, insLDX & addrAbsY)
     colF = colErr
 
-    colAlu e o = concatMap (\i -> [i e, i o])
+    colAlu e o = concatMap (\i -> [i & e, i & o])
                 [insORA, insAND, insEOR, insADC, insSTA, insLDA, insCMP, insSBC]
-    colBit e o = concatMap (\i -> [i e, i o])
+    colBit e o = concatMap (\i-> [i & e, i & o])
                 [insASL, insROL, insLSR, insROR, insSTX, insLDX, insDEC, insINC]
 
     colErr = replicate 16 insErr
@@ -85,22 +85,23 @@ decode = V.fromList $ concat $ transpose
     (i:is) `except` (n, j) | n == 0    = j : is
                            | otherwise = i : is `except` (n-1, j)
 
+    i & a = a >>= i
 
 
-loadIns :: (Word8 -> St ()) -> St Addr -> St ()
-loadIns loader mode = mode >>= fetch >>= loader
+loadIns :: (Word8 -> St ()) -> Addr -> St ()
+loadIns loader addr = fetch addr >>= loader
 
-storeIns :: St Word8 -> St Addr -> St ()
-storeIns fetcher mode = mode >>= \addr -> fetcher >>= store addr
+storeIns :: St Word8 -> Addr -> St ()
+storeIns fetcher addr = fetcher >>= store addr
 
-aluIns :: (v -> St ()) -> (Word8 -> Word8 -> v) -> St Addr -> St ()
-aluIns set op mode = do
-    v <- mode >>= fetch
+aluIns :: (v -> St ()) -> (Word8 -> Word8 -> v) -> Addr -> St ()
+aluIns set op addr = do
+    v <- fetch addr
     a <- gets regA
     set $ op a v
 
-modIns :: (Word8 -> St Word8) -> St Addr -> St ()
-modIns op mode = mode >>= \addr -> fetch addr >>= op >>= store addr
+modIns :: (Word8 -> St Word8) -> Addr -> St ()
+modIns op addr = fetch addr >>= op >>= store addr
 
 modAccIns :: (Word8 -> St Word8) -> St ()
 modAccIns op = gets regA >>= op >>= \v -> modify $ \s -> s { regA = v }
@@ -175,11 +176,11 @@ insLSRacc = modAccIns lsrOp
 insRORacc = modAccIns rorOp
 
 insBIT      = aluIns setZVNbit (,)
-insJMP mode = mode >>= jump
+insJMP      = jump
 insSTY      = storeIns $ gets regY
 insLDY      = loadIns setYZN
-insCPX mode = gets regX >>= \x -> mode >>= fetch >>= setCZN . cmpOp x
-insCPY mode = gets regY >>= \y -> mode >>= fetch >>= setCZN . cmpOp y
+insCPX addr = gets regX >>= \x -> fetch addr >>= setCZN . cmpOp x
+insCPY addr = gets regY >>= \y -> fetch addr >>= setCZN . cmpOp y
 
 insBPL = brIns bitN False
 insBMI = brIns bitN True
